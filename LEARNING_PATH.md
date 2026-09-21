@@ -143,7 +143,7 @@ Running example: **a support ticket router**.
 | 43  | [hybrid deterministic + LLM](07-langgraph-advanced/43_hybrid_deterministic_llm.ipynb)                 | Let the model interpret and the code decide               |
 | 43a | [five workflow patterns](07-langgraph-advanced/43a_five_workflow_patterns.ipynb)                     | Chaining, parallel, routing, orchestrator-worker, evaluator-optimizer |
 | 44  | [errors, retries, tool failures](07-langgraph-advanced/44_error_retries_tool_failures.ipynb)          | `RetryPolicy`, error handlers, timeouts, circuit breakers |
-| 45  | [LangSmith and Studio](07-langgraph-advanced/45_langsmith_and_studio.ipynb)                           | Debug visually; build regression datasets                 |
+| 45  | [LangSmith and Studio](07-langgraph-advanced/45_langsmith_and_studio.ipynb)                           | Trace/debug graphs; LangSmith use cases; Studio           |
 | 46  | [deployment and versioning](07-langgraph-advanced/46_deployment_and_versioning.ipynb)                 | Ship a graph and migrate in-flight threads                |
 | 47  | [token limits and summarisation](07-langgraph-advanced/47_token_limits_and_summarization_nodes.ipynb) | Choose between stuff, map-reduce, refine and retrieval    |
 | 48  | [self-reflective RAG](07-langgraph-advanced/48_self_reflective_rag.ipynb)                             | Grade documents and answers; CRAG; adaptive reflection    |

@@ -4,19 +4,100 @@
 # | | |
 # |---|---|
 # | **Level** | Advanced (LangGraph) |
-# | **Time** | 40 minutes |
+# | **Time** | 55 minutes |
 # | **Prerequisites** | `44_error_retries_tool_failures`, `19_langsmith` |
 # | **Checklist ID** | `45_langsmith_and_studio` |
 #
 # ## Why this matters
 #
 # `print()` works until your graph has twelve nodes, three of which loop. Then
-# you need to see the actual execution tree: which nodes ran, in what order, what
-# each one received, how long it took and what it cost.
+# you need the actual execution tree: which nodes ran, in what order, what each
+# received, how long each took, and what it cost.
 #
-# Notebook 19 covered LangSmith for chains. Graphs add structure - nested spans
-# per node, subgraph boundaries, loop iterations - and LangGraph Studio adds a
-# visual debugger where you can step through a graph and edit its state live.
+# Notebook 19 taught LangSmith on **chains**. This lesson applies the same
+# platform to **graphs**, then adds **LangGraph Studio** — a visual debugger
+# where you step through nodes and edit state live.
+#
+# ---
+#
+# ## Knowledge base (read this before the code)
+#
+# ### What LangSmith is
+#
+# LangSmith is the observability and evaluation platform for LangChain and
+# LangGraph. It is **not** a model and **not** a replacement for your app
+# server. It sits beside your process and records what happened.
+#
+# | Layer | Job |
+# |---|---|
+# | **Tracing** | Record every LLM call, tool call, node, and custom function as nested *spans* |
+# | **Debugging** | Open a failed run and see the exact prompt, tool args, and state |
+# | **Datasets** | Store example inputs + expected outputs as a regression set |
+# | **Evaluations / experiments** | Re-run a dataset after a prompt or graph change and compare scores |
+# | **Feedback** | Attach thumbs, scores, or comments to a specific run |
+# | **Monitoring** | Filter by tag/metadata; watch latency, errors, and cost over time |
+#
+# Official docs: https://docs.langchain.com/langsmith/home
+#
+# ### What LangSmith can do (use cases)
+#
+# | Use case | What you do | What you get |
+# |---|---|---|
+# | **"Why did this user get a bad answer?"** | Filter by `user_id` / `thread_id` in metadata | The exact prompt, retrieval, and tool calls for that turn |
+# | **"Which node is slow / expensive?"** | Open the waterfall in a graph trace | Per-node latency and token counts |
+# | **"Did my prompt change help?"** | Run an experiment on a dataset | Side-by-side scores for v1 vs v2 |
+# | **"Did quality drop after deploy?"** | Tag runs with `prompt_version` / `env:prod` | Slice metrics by version |
+# | **"Turn this bug into a test"** | Add the failing input + correct output to a dataset | It fails CI next time the bug returns |
+# | **"Make my Python visible"** | `@traceable` on helpers | Custom logic shows as spans, not a black box |
+# | **"Debug a looping graph"** | Trace a graph with conditional edges | See how many times `draft` / `review` actually ran |
+#
+# ### Debugging workflow with LangSmith (the habit)
+#
+# When something is wrong, open the trace and check **in this order**:
+#
+# 1. **Rendered prompt** — missing variables, truncated context, wrong system message.
+# 2. **`finish_reason`** — `length` means the model was cut off.
+# 3. **Node path** — did the graph take the branch you expected?
+# 4. **Tool / retriever I/O** — bad args in → garbage out.
+# 5. **Token and latency waterfall** — one step usually dominates.
+# 6. **Loop count** — graphs with revise loops often run more iterations than you think.
+#
+# That workflow is the same for chains (notebook 19) and graphs (this notebook).
+# Graphs just add nesting: one parent run → child runs per node → grandchildren
+# for each LLM / tool inside the node.
+#
+# ### Keyword glossary for this lesson
+#
+# | Keyword | Meaning |
+# |---|---|
+# | **Trace / run** | One top-level invocation of a chain or graph, plus all nested work |
+# | **Span** | One timed step inside a trace (a node, an LLM call, a `@traceable` function) |
+# | **Project** | A named bucket of runs in LangSmith (`LANGSMITH_PROJECT`) |
+# | **`run_name`** | Human title for the run in the UI (instead of generic `LangGraph`) |
+# | **`tags`** | Filter chips (`env:prod`, `v1`, `research`) |
+# | **`metadata`** | Searchable key/value (`user_id`, `tenant`, `prompt_version`) |
+# | **`thread_id`** | Checkpointer key that groups turns of one conversation |
+# | **`@traceable`** | Decorator that turns a plain Python function into a span |
+# | **`run_type`** | How LangSmith renders a span: `llm`, `chain`, `tool`, `retriever`, … |
+# | **Dataset** | Collection of `{inputs, outputs}` examples for regression |
+# | **Experiment / evaluate** | Running a target function over a dataset with scorers |
+# | **Studio** | Local visual IDE for graphs (`langgraph dev`) |
+# | **`langgraph.json`** | Config that tells Studio which compiled graphs to load |
+# | **Checkpointer** | Persistence for graph state between steps / turns (notebook 34) |
+#
+# ### LangChain vs LangGraph vs LangSmith (how they fit)
+#
+# ```
+# LangChain  → building blocks (models, prompts, tools, LCEL)
+# LangGraph  → orchestration (state, nodes, edges, loops, HITL)
+# LangSmith  → observe and evaluate what those two actually did
+# Studio     → visual debugger for LangGraph (uses LangSmith traces)
+# ```
+#
+# You can run graphs without LangSmith. You should not ship them without *some*
+# form of the same discipline (this notebook ends with an offline `debug_run`).
+#
+# ---
 
 # %%
 from pathlib import Path
@@ -52,16 +133,20 @@ print("tracing enabled:", ctx.tracing)
 # %% [markdown]
 # ## 1. Enabling tracing
 #
-# Two environment variables and every graph run is traced. No code changes.
+# **Knowledge.** Tracing is opt-in via environment variables. Once on, every
+# LangChain / LangGraph call in the process emits spans — you do not wrap each
+# call by hand.
 #
-# ```bash
-# LANGSMITH_TRACING=true
-# LANGSMITH_API_KEY=lsv2_...
-# LANGSMITH_PROJECT=genai-mastery      # optional, groups runs
-# ```
+# | Variable | Role |
+# |---|---|
+# | `LANGSMITH_TRACING=true` | Master switch |
+# | `LANGSMITH_API_KEY` | Auth to https://smith.langchain.com |
+# | `LANGSMITH_PROJECT` | Which project receives the runs (group by app or lesson) |
+# | `LANGSMITH_ENDPOINT` | Cloud default is fine; set this only for self-hosted |
 #
-# `shared/notebook_setup.py` reads these from `.env` and calls `enable_tracing()`
-# for you.
+# Older docs used `LANGCHAIN_*` names; both work. Prefer `LANGSMITH_*` in new code.
+#
+# `shared/notebook_setup.py` loads `.env` and calls `enable_tracing()` for you.
 
 # %%
 from shared.llm import describe_environment, has_key
@@ -69,11 +154,27 @@ from shared.llm import describe_environment, has_key
 print(describe_environment())
 if not has_key("LANGSMITH_API_KEY"):
     print("\nGet a free key at https://smith.langchain.com - the rest of this notebook still runs.")
+else:
+    print("\nWith tracing on, every graph.invoke below will appear in your LangSmith project.")
 
 # %% [markdown]
 # ## 2. A graph worth tracing
 #
-# Something with a loop, a branch and a tool call - so the trace has structure.
+# **Knowledge.** A flat single-node graph produces a boring trace. To learn how
+# to *read* a graph trace you need:
+#
+# - more than one **node** (`plan` → `draft` → `review`)
+# - a **conditional edge** that can loop (`keep_going`)
+# - **structured output** inside a node (`Review` via `with_structured_output`)
+# - a **reducer** on some fields (`Annotated[int, operator.add]` for `revisions`)
+#
+# | Piece in the code | What it teaches in the trace |
+# |---|---|
+# | `ResearchState` | The state schema — what each node may read/write |
+# | `Annotated[..., operator.add]` | Reducers: updates *accumulate* instead of overwrite |
+# | `plan_node` / `draft_node` / `review_node` | Become child spans under the parent graph run |
+# | `keep_going` | Conditional routing — you will see 1–N draft/review pairs |
+# | `compile(name=..., checkpointer=...)` | Named parent run + resumable `thread_id` |
 
 # %%
 class ResearchState(TypedDict):
@@ -86,7 +187,7 @@ class ResearchState(TypedDict):
 
 
 class Review(BaseModel):
-    """A reviewer's verdict on a draft."""
+    """A reviewer's verdict on a draft — becomes structured LLM output in the trace."""
 
     score: int = Field(description="Quality out of 10", ge=1, le=10)
     issue: str = Field(description="The single most important thing to fix")
@@ -96,6 +197,7 @@ reviewer = model.with_structured_output(Review)
 
 
 def plan_node(state: ResearchState) -> dict:
+    """Node: produce a short plan. Returns a partial state update."""
     plan = (ChatPromptTemplate.from_template(
         "Write a 3-bullet plan for answering: {question}"
     ) | model | parser).invoke(state)
@@ -103,6 +205,7 @@ def plan_node(state: ResearchState) -> dict:
 
 
 def draft_node(state: ResearchState) -> dict:
+    """Node: write or revise the answer. `revisions: 1` accumulates via the reducer."""
     template = ("Answer in 80 words following this plan.\n\nQuestion: {question}\nPlan: {plan}"
                 if not state["draft"] else
                 "Improve this answer.\n\nQuestion: {question}\nDraft: {draft}\nFix: {trace}")
@@ -113,12 +216,14 @@ def draft_node(state: ResearchState) -> dict:
 
 
 def review_node(state: ResearchState) -> dict:
+    """Node: score the draft. Look for the structured `Review` span in LangSmith."""
     verdict = reviewer.invoke([("system", "Review this answer strictly."),
                                ("human", f"Q: {state['question']}\n\nA: {state['draft']}")])
     return {"score": verdict.score, "trace": [f"review:{verdict.score} - {verdict.issue}"]}
 
 
 def keep_going(state: ResearchState) -> Literal["draft", "__end__"]:
+    """Router: stop when score is good enough or we hit a revision cap."""
     return END if state["score"] >= 8 or state["revisions"] >= 3 else "draft"
 
 
@@ -135,10 +240,26 @@ graph = builder.compile(name="research_loop", checkpointer=InMemorySaver())
 print(graph.get_graph().draw_ascii())
 
 # %% [markdown]
+# **After this cell.** The ASCII diagram is the *static* topology. The LangSmith
+# trace of a live run is the *dynamic* path (how many times you looped). Keep
+# both ideas separate when debugging.
+
+# %% [markdown]
 # ## 3. Making traces readable
 #
-# A trace full of `RunnableSequence` entries is barely better than no trace. Name
-# and tag your runs.
+# **Knowledge.** An unnamed graph run shows up as `LangGraph` with anonymous
+# children. That is almost useless in a project with hundreds of runs. You pass
+# observability fields through the **`config`** argument of `invoke` / `stream`.
+#
+# | Config key | What it buys you in the UI |
+# |---|---|
+# | `run_name` | A readable title instead of `LangGraph` |
+# | `tags` | Filter chips — `track-07`, `v1`, `tenant:acme` |
+# | `metadata` | Searchable key/value; group cost by tenant or prompt version |
+# | `configurable.thread_id` | Groups every turn of one conversation (also required by the checkpointer) |
+#
+# **Always include `prompt_version` in metadata.** Three weeks later, "did quality
+# drop when we shipped 1.2.0?" is answerable only if that string is on the run.
 
 # %%
 QUESTION = "Should we cap the number of tool calls an agent can make, and why?"
@@ -157,18 +278,18 @@ for step in outcome["trace"]:
     print(f"  {step[:96]}")
 
 # %% [markdown]
-# | Config key | What it buys you in the UI |
-# |---|---|
-# | `run_name` | A readable title instead of `LangGraph` |
-# | `tags` | Filter chips - `track-07`, `v1`, `tenant:acme` |
-# | `metadata` | Searchable key/value; group cost by tenant or prompt version |
-# | `thread_id` | Groups every turn of one conversation |
+# **After this cell — debugging checklist in the UI**
 #
-# **Always include `prompt_version`.** Three weeks later, "did quality drop when
-# we shipped 1.2.0?" is answerable only if it is in the metadata.
+# 1. Open https://smith.langchain.com → your project.
+# 2. Find the run named `research_loop:tool_call_caps`.
+# 3. Expand `plan` → `draft` → `review`. Count how many draft/review pairs ran.
+# 4. Click an LLM span: confirm the *rendered* prompt matches what you expected.
+# 5. Filter the project by tag `v1` or metadata `prompt_version=1.2.0`.
 
 # %% [markdown]
 # ## 4. What a graph trace looks like
+#
+# **Knowledge.** Mentally map every live run to a tree like this:
 #
 # ```
 # research_loop                                     12.4s   4,812 tokens
@@ -183,16 +304,27 @@ for step in outcome["trace"]:
 #  `- __end__
 # ```
 #
-# Three things to read off it immediately:
+# Read three facts off it immediately:
 #
-# 1. **Which node dominates** the latency (here: `draft`, twice).
+# 1. **Which node dominates** latency (here: `draft`, twice).
 # 2. **How many loop iterations** actually ran.
-# 3. **Where tokens went** - often the surprise is an unnoticed second call.
+# 3. **Where tokens went** — often an unnoticed second call.
+#
+# If the UI and your mental model disagree, trust the UI: the router ran what it ran.
 
 # %% [markdown]
 # ## 5. Tracing custom functions with `@traceable`
 #
-# Plain Python inside a node is invisible unless you mark it.
+# **Knowledge.** Nodes that only call LangChain runnables are traced for free.
+# Plain Python inside a node (scoring, ranking, I/O) is **invisible** unless you
+# mark it. `@traceable` creates a span; nested calls nest in the UI.
+#
+# | Argument | Meaning |
+# |---|---|
+# | `name=` | Label in the tree |
+# | `run_type=` | UI treatment: `tool`, `chain`, `retriever`, `llm`, … |
+#
+# Use `@traceable` on anything you might later ask: "what did this helper return?"
 
 # %%
 from langsmith import traceable
@@ -209,6 +341,7 @@ def score_relevance(question: str, text: str) -> float:
 
 @traceable(name="rank_candidates", run_type="chain")
 def rank_candidates(question: str, candidates: list[str]) -> list[tuple[str, float]]:
+    """Parent span: will show three `score_relevance` children when tracing is on."""
     scored = [(c, score_relevance(question, c)) for c in candidates]
     return sorted(scored, key=lambda pair: pair[1], reverse=True)
 
@@ -222,14 +355,22 @@ for text, score in ranked:
     print(f"  {score:.3f}  {text[:66]}")
 
 # %% [markdown]
-# Nested `@traceable` functions nest in the trace too, so `rank_candidates`
-# shows three `score_relevance` children.
+# **After this cell.** In LangSmith, open the `rank_candidates` run. You should
+# see three nested `score_relevance` spans. If you only see one flat span, the
+# child was not decorated (or tracing is off).
 
 # %% [markdown]
 # ## 6. Finding the slow step programmatically
 #
-# You do not always want to open a browser. The client API answers latency
-# questions directly.
+# **Knowledge.** The browser UI is best for one-off debugging. For scripts and
+# alerts, use the **LangSmith Client SDK** (`Client.list_runs`). Same data, no
+# clicking.
+#
+# Typical questions this answers:
+#
+# - What are the last N runs' latencies?
+# - Which run error'd?
+# - What is the slowest run in this project right now?
 
 # %%
 if require("LANGSMITH_API_KEY", feature="querying traces from the SDK"):
@@ -252,14 +393,22 @@ if require("LANGSMITH_API_KEY", feature="querying traces from the SDK"):
             print(f"\nslowest: {slowest.name} "
                   f"({(slowest.end_time - slowest.start_time).total_seconds():.2f}s)")
         else:
-            print(f"no runs yet in project {project!r}")
+            print(f"no runs yet in project {project!r} — invoke the graph above with tracing on first")
     except Exception as exc:
         print(f"[skipped] {type(exc).__name__}: {str(exc)[:120]}")
 
 # %% [markdown]
 # ## 7. Datasets and regression testing for graphs
 #
-# The same evaluation discipline as notebook 26, applied to a whole graph.
+# **Knowledge.** A **dataset** is a list of examples: `inputs` (what you send the
+# graph) and `outputs` (what “good” looks like — exact text, keywords, grades).
+# An **experiment** runs your graph over that dataset and scores each example.
+#
+# Without datasets, “I improved the prompt” is an opinion. With them, it is a
+# number you can put in CI.
+#
+# This section: upload (or reuse) a tiny dataset in LangSmith, then run the same
+# checks **locally** so the lesson works without a key.
 
 # %%
 EVAL_CASES = [
@@ -292,11 +441,14 @@ if require("LANGSMITH_API_KEY", feature="LangSmith datasets"):
 # %% [markdown]
 # ### Evaluating locally
 #
-# You do not need LangSmith to run a regression suite. This version works
-# offline and is what you would put in CI.
+# **Knowledge.** `must_mention` here is a deliberately dumb evaluator (substring
+# check). Production evaluators are often LLM-as-judge (notebook 26) or exact
+# match on structured fields. The *discipline* is the same: fixed cases, scored
+# outputs, a gate that fails the build.
 
 # %%
 def run_case(case: dict) -> dict:
+    """Invoke the graph once and score with a simple keyword check."""
     outcome = graph.invoke(
         {"question": case["question"], "plan": "", "draft": "", "score": 0, "revisions": 0, "trace": []},
         config={"configurable": {"thread_id": f"eval-{hash(case['question']) & 0xffff}"},
@@ -324,7 +476,7 @@ print(f"\n{passed}/{len(results)} passed, mean score "
 
 
 def regression_gate(results: list[dict], min_pass_rate: float = 0.8, min_score: float = 7.0) -> None:
-    """Raise in CI if quality regressed."""
+    """Raise in CI if quality regressed — this is the production pattern."""
     rate = sum(r["passed"] for r in results) / len(results)
     mean = sum(r["score"] for r in results) / len(results)
     if rate < min_pass_rate or mean < min_score:
@@ -340,13 +492,24 @@ except AssertionError as exc:
 # %% [markdown]
 # ## 8. LangGraph Studio
 #
-# Studio is a visual IDE for graphs: run them, watch execution animate node by
-# node, inspect and **edit** state at any step, and fork from any checkpoint -
-# the time travel of notebook 39, with a UI.
+# **Knowledge.** Studio is a **visual IDE for LangGraph**, not a separate product
+# from LangSmith. It runs your graph locally, animates node execution, lets you
+# inspect and **edit** state mid-run, and deep-links into LangSmith traces.
 #
-# ### Setting it up
+# | Capability | Why it matters |
+# |---|---|
+# | Live node highlighting | See the actual path, including loops |
+# | Inspect state at any step | No `print` archaeology |
+# | **Edit state and continue** | Test “what if classifier said billing?” without code changes |
+# | Fork from any checkpoint | Compare two futures (pairs with notebook 39 time travel) |
+# | Interrupt UI | Click approve/reject for human-in-the-loop nodes |
+# | Trace link | Jump into the LangSmith waterfall for the same run |
 #
-# Studio needs a `langgraph.json` at the project root describing your graphs.
+# ### Setup: `langgraph.json`
+#
+# Studio discovers graphs from a JSON file at the project root. Each entry points
+# at a **module:attribute** that is a *compiled* graph (usually without your own
+# checkpointer — the platform supplies one).
 
 # %%
 import json
@@ -365,46 +528,43 @@ config_path.write_text(json.dumps(studio_config, indent=2), encoding="utf-8")
 print(config_path.read_text(encoding="utf-8"))
 
 # %% [markdown]
-# The graph module exports a **compiled** graph at module level:
+# **What each field means**
+#
+# | Field | Meaning |
+# |---|---|
+# | `dependencies` | Packages / paths installed into the Studio process (`.` = this repo) |
+# | `graphs` | Map of UI name → `path/to/module.py:exported_compiled_graph` |
+# | `env` | File of environment variables loaded before import |
+#
+# Example export module:
 #
 # ```python
 # # app/graphs.py
 # from langgraph.graph import StateGraph, START, END
 #
 # builder = StateGraph(ResearchState)
-# ...
-# research_graph = builder.compile()      # no checkpointer - the platform supplies one
+# # ... add nodes and edges ...
+# research_graph = builder.compile()   # no checkpointer — Studio/Platform adds one
 # ```
 #
-# Then:
+# Then locally:
 #
 # ```bash
 # python -m pip install --upgrade "langgraph-cli[inmem]"
-# langgraph dev            # starts the API and opens Studio in the browser
+# langgraph dev            # starts the local API and opens Studio in the browser
 # ```
 #
-# `langgraph dev` runs everything locally in memory - no Docker, no account.
-#
-# ### What Studio gives you
-#
-# | Capability | Why it matters |
-# |---|---|
-# | Visual graph with live node highlighting | See the actual path, including loops |
-# | Inspect state at any step | No `print` statements |
-# | **Edit state and continue** | Test a branch without changing code |
-# | Fork from any checkpoint | Compare two futures side by side |
-# | Interrupt UI | Approve/reject human-in-the-loop steps by hand |
-# | Trace link | Jump straight into the LangSmith trace |
-#
-# The state-editing feature is the one that changes how you work. Reproducing
-# "what if the classifier had said billing?" becomes a two-second edit instead of
-# a code change and a rerun.
+# `langgraph dev` keeps everything in memory — no Docker required for learning.
 
 # %% [markdown]
-# ## 9. Debugging without any of it
+# ## 9. Debugging without LangSmith or Studio
 #
-# Studio and LangSmith are conveniences. When you have neither, this function
-# gets you most of the way.
+# **Knowledge.** Keys expire, networks fail, and interviews happen offline. The
+# same information a waterfall gives you can be approximated with
+# `graph.stream(..., stream_mode="updates")`: each chunk is `{node_name: update}`.
+#
+# Use this in CI logs and when you cannot open a browser. Prefer LangSmith when
+# you have it — richer prompts, tokens, and nested LLM spans.
 
 # %%
 import time
@@ -443,19 +603,15 @@ debug_run(
 )
 
 # %% [markdown]
+# **After this cell.** Compare the printed node sequence with a LangSmith trace
+# of the same question. Same story; different UI.
+
+# %% [markdown]
 # ## 10. Production observability checklist
 #
-# | Practice | Why |
-# |---|---|
-# | `run_name` on every entry point | Traces are searchable |
-# | `thread_id` on every conversation | Turns group together |
-# | `metadata` with tenant, user, prompt version | Slice cost and quality |
-# | Tag the environment (`dev` / `staging` / `prod`) | Do not mix test traffic |
-# | Separate LangSmith projects per environment | Same reason |
-# | Sample traces at high volume | Tracing 100% of 10M requests is expensive |
-# | Alert on error rate and p95 latency | Not just on crashes |
-# | A regression suite in CI | Catch quality drops before users do |
-# | **Never put secrets in metadata or tags** | Traces are widely readable |
+# **Knowledge.** Tracing 100% of production traffic is often too expensive and
+# too noisy. Standardise a `config` factory: always set identity fields; sample
+# in prod; never put secrets in tags or metadata (traces are widely readable).
 
 # %%
 def production_config(*, thread_id: str, user_id: str, tenant: str,
@@ -479,33 +635,47 @@ example = production_config(thread_id="t-1", user_id="u-4821", tenant="acme")
 print(json.dumps({k: v for k, v in example.items() if k != "callbacks"}, indent=2))
 
 # %% [markdown]
+# | Practice | Why |
+# |---|---|
+# | `run_name` on every entry point | Traces are searchable |
+# | `thread_id` on every conversation | Turns group together |
+# | `metadata` with tenant, user, prompt version | Slice cost and quality |
+# | Tag the environment (`dev` / `staging` / `prod`) | Do not mix test traffic |
+# | Separate LangSmith projects per environment | Same reason |
+# | Sample traces at high volume | Full tracing at 10M req/day is costly |
+# | Alert on error rate and p95 latency | Not just on process crashes |
+# | A regression suite in CI | Catch quality drops before users do |
+# | **Never put secrets in metadata or tags** | Traces are widely readable |
+
+# %% [markdown]
 # ## Try it yourself
 #
-# 1. **Create `langgraph.json` for real.** Move one of your graphs into
-#    `app/graphs.py`, run `langgraph dev`, and step through it in Studio.
-# 2. **Find the expensive node.** Use `debug_run` on the research loop and work
-#    out how much each revision iteration costs.
-# 3. **Wire the gate into CI.** Make `regression_gate` a script that exits
-#    non-zero, and run it on every change to a prompt.
-# 4. **Tag and slice.** Run the graph 10 times with two different
-#    `prompt_version` tags and compare mean score per version.
+# 1. **Debug a bad answer in LangSmith.** Invoke the graph with a wrong-ish
+#    question, open the trace, and write down which check from the debugging
+#    workflow (prompt → finish_reason → path → tools → cost) found the issue.
+# 2. **Create `langgraph.json` for real.** Move one graph into `app/graphs.py`,
+#    run `langgraph dev`, edit state mid-run in Studio.
+# 3. **Find the expensive node.** Use `debug_run` and (if keyed) `list_runs` —
+#    do they agree on which node dominates?
+# 4. **Wire the gate into CI.** Make `regression_gate` exit non-zero on failure.
+# 5. **Tag and slice.** Run 10 times with two `prompt_version` values; compare
+#    mean score per version in the UI.
 
 # %% [markdown]
 # ## Recap
 #
 # | Concept | Takeaway |
 # |---|---|
-# | Enable tracing | Two env vars; no code change |
-# | `run_name`, `tags`, `metadata` | Turn an unreadable trace into a searchable one |
-# | `prompt_version` in metadata | The only way to answer "did the change hurt?" later |
-# | Graph traces | Show node nesting, loop iterations and per-node cost |
-# | `@traceable` | Make custom Python visible as its own span |
-# | `client.list_runs` | Query latency and errors without a browser |
-# | Local regression suite | Works offline; belongs in CI |
-# | `langgraph.json` + `langgraph dev` | Runs Studio locally, in memory, no Docker |
-# | Studio's killer feature | Edit state mid-run and fork from any checkpoint |
-# | `debug_run` | Node-by-node timings when you have no tooling at all |
-# | Sampling | Trace 100% in dev, a fraction in production |
+# | LangSmith | Trace, debug, dataset, evaluate, feedback, monitor |
+# | Debugging order | Prompt → finish_reason → path → tools → tokens/latency → loops |
+# | Graph traces | Parent run + per-node children + nested LLM/tool spans |
+# | `run_name` / `tags` / `metadata` | Make runs searchable; always store `prompt_version` |
+# | `@traceable` | Your Python becomes a span |
+# | `Client.list_runs` | Latency/error queries without a browser |
+# | Datasets + gate | Opinion → measurable regression check |
+# | Studio + `langgraph.json` | Visual step-through; edit state; fork checkpoints |
+# | `debug_run` | Offline stand-in for the waterfall |
+# | Sampling | 100% in dev; a fraction in prod |
 #
 # ## Next
 #

@@ -4,7 +4,7 @@
 # | | |
 # |---|---|
 # | **Level** | Intermediate |
-# | **Time** | 45 minutes |
+# | **Time** | 50 minutes |
 # | **Prerequisites** | `18_from_agentexecutor_to_graphs` |
 # | **Checklist ID** | `19_langsmith` |
 #
@@ -19,8 +19,75 @@
 # every latency figure. Debugging an agent without it is guesswork.
 #
 # > Everything here works with a free personal LangSmith account. If you have no
-# > key, the notebook still runs - the tracing cells skip and the local
+# > key, the notebook still runs — the tracing cells skip and the local
 # > alternatives still demonstrate the concepts.
+#
+# ---
+#
+# ## Knowledge base (read this before the code)
+#
+# ### What LangSmith is
+#
+# LangSmith is the **observability + evaluation** platform for LangChain (and
+# later LangGraph). It sits beside your process. It does not replace your app,
+# your models, or your vector store.
+#
+# Docs: https://docs.langchain.com/langsmith/home
+#
+# ### What LangSmith can do
+#
+# | Capability | In one sentence | You will practice it in |
+# |---|---|---|
+# | **Tracing** | Record nested spans for every LLM / tool / chain call | §§1–4 |
+# | **Debugging** | Open a run and inspect the exact rendered prompt and I/O | §10 + UI |
+# | **Datasets** | Store inputs + expected outputs as a regression set | §7 |
+# | **Evaluations** | Re-score a dataset after a prompt change (`evaluate`) | §7 |
+# | **Feedback** | Attach thumbs / scores / comments to a specific run | §9 |
+# | **Monitoring** | Filter by tag/metadata; watch errors, latency, cost | §§3, 6 |
+#
+# Notebook **45** extends the same platform to **graphs** and adds Studio.
+#
+# ### Use cases (when you actually open LangSmith)
+#
+# | Situation | What you look for |
+# |---|---|
+# | User reports a bad answer | Filter by `user_id` / `thread_id` → open that run |
+# | “The model is broken” | Almost always the **rendered prompt** or truncated context |
+# | Latency complaint | Waterfall: which span dominates time? |
+# | Cost spike | Token counts per step; a hidden second LLM call |
+# | Prompt change debate | Dataset experiment: v1 vs v2 score |
+# | Production bug | Add the failing example to the dataset so it cannot silently return |
+#
+# ### Debugging order (memorise this)
+#
+# 1. **Rendered prompt** — variables `None`, truncated context, missing system msg.
+# 2. **`finish_reason`** — `length` means truncation.
+# 3. **Retrieved docs / tool I/O** — wrong chunk or bad tool args.
+# 4. **Token counts** — one step usually owns the bill.
+# 5. **Latency waterfall** — one step usually owns the wait.
+#
+# ### Keywords you will see in every later notebook
+#
+# | Keyword | Meaning |
+# |---|---|
+# | Trace / run | One top-level invocation + all nested work |
+# | Span | One timed step inside a trace |
+# | Project | Named bucket of runs (`LANGSMITH_PROJECT`) |
+# | `run_name` | Human title in the UI |
+# | `tags` / `metadata` | Filters and searchable key/values |
+# | `@traceable` | Make *your* Python function a span |
+# | `run_type` | How the UI renders a span (`llm`, `chain`, `tool`, `retriever`, …) |
+# | Dataset / experiment | Fixed examples + scored re-runs |
+#
+# ### How it fits with LangChain and LangGraph
+#
+# ```
+# LangChain  → build chains, tools, RAG
+# LangGraph  → orchestrate stateful multi-step agents (Tracks 05–07)
+# LangSmith  → see and evaluate what either of them did
+# ```
+#
+# ---
 
 # %%
 from pathlib import Path
@@ -48,8 +115,9 @@ print("Project             :", os.environ.get("LANGSMITH_PROJECT", "(unset)"))
 # %% [markdown]
 # ## 1. Turning tracing on
 #
-# Tracing is configured entirely by environment variables. There is no code to
-# add - any LangChain component in the process is traced automatically.
+# **Knowledge.** Tracing is configured entirely by environment variables. There
+# is no per-call wrapper to add — any LangChain component in the process is
+# traced automatically once the switch is on.
 #
 # ```ini
 # # .env
@@ -59,8 +127,14 @@ print("Project             :", os.environ.get("LANGSMITH_PROJECT", "(unset)"))
 # LANGSMITH_ENDPOINT=https://api.smith.langchain.com
 # ```
 #
-# That is the whole setup. The variables were previously named `LANGCHAIN_*`;
-# both work, but prefer `LANGSMITH_*` in new code.
+# | Variable | Role |
+# |---|---|
+# | `LANGSMITH_TRACING` | Master switch (`true` / `false`) |
+# | `LANGSMITH_API_KEY` | Auth for https://smith.langchain.com |
+# | `LANGSMITH_PROJECT` | Which project receives runs |
+# | `LANGSMITH_ENDPOINT` | Cloud default; override only for self-hosted |
+#
+# Older docs used `LANGCHAIN_*` names; both work. Prefer `LANGSMITH_*` in new code.
 
 # %%
 from shared.llm import enable_tracing
@@ -72,6 +146,10 @@ else:
 
 # %% [markdown]
 # ## 2. Your first trace
+#
+# **Knowledge.** An LCEL pipe (`prompt | model | parser`) becomes a small trace
+# tree: parent chain → prompt → LLM → parser. `.with_config(run_name=...)`
+# labels the parent so you can find it in the UI.
 
 # %%
 from langchain_core.output_parsers import StrOutputParser
@@ -90,12 +168,13 @@ print(triage_chain.invoke({"ticket": "webhook deliveries failing with 401 after 
 
 if tracing_on:
     print("\nOpen https://smith.langchain.com -> project 'genai-mastery-nb19' to see the run.")
+    print("In the run, open the LLM span and read the *rendered* prompt — that is the debugging habit.")
 
 # %% [markdown]
 # ## 3. Making traces readable
 #
-# A trace full of `RunnableSequence` and `RunnableParallel` is technically correct
-# and useless. Name things.
+# **Knowledge.** A tree full of `RunnableSequence` / `RunnableParallel` is
+# technically correct and useless for search. Name, tag, and attach metadata.
 
 # %%
 from langchain_core.runnables import RunnableParallel
@@ -141,9 +220,9 @@ print("run tagged with user/tenant metadata")
 # %% [markdown]
 # ## 4. Tracing your own functions with `@traceable`
 #
-# LangChain components trace themselves. Your business logic does not - unless you
-# decorate it. This matters because the interesting bugs are usually in your code,
-# not the model call.
+# **Knowledge.** LangChain components trace themselves. Your business logic does
+# not — unless you decorate it. The interesting bugs are usually in *your* code
+# (retrieval ranking, post-filters), not the raw model call.
 
 # %%
 from langsmith import traceable
@@ -179,7 +258,9 @@ print(answer("How many casual leave days are there?").strip())
 # %% [markdown]
 # ## 5. Debugging without a LangSmith account
 #
-# These work offline and are genuinely useful even when tracing is on.
+# **Knowledge.** Same questions LangSmith answers — “what was sent?”, “which
+# steps ran?”, “show everything” — using local tools. Useful offline and as a
+# complement when tracing is on.
 
 # %%
 # (a) Inspect exactly what was sent to the model.
@@ -430,21 +511,22 @@ if require("LANGSMITH_API_KEY", feature="attaching user feedback to a run"):
     print("feedback attached to run", run_id)
 
 # %% [markdown]
-# ## 10. What to look at in a trace
+# ## 10. What to look at in a trace (debugging playbook)
 #
-# When something is wrong, check these in order:
+# When something is wrong, open the run in LangSmith and check **in this order**:
 #
-# 1. **The rendered prompt.** Ninety percent of bugs are visible here - a variable
-#    that rendered as `None`, context that got truncated, a template that lost its
-#    system message.
-# 2. **`finish_reason`.** `length` means truncation, and truncation explains a
-#    surprising number of "the model is broken" reports.
+# 1. **The rendered prompt.** ~90% of bugs are here — a variable that rendered as
+#    `None`, truncated context, a template that lost its system message.
+# 2. **`finish_reason`.** `length` means truncation; that alone explains many
+#    “the model is broken” reports.
 # 3. **Retrieved documents.** Was the right chunk even in the context?
-# 4. **Tool inputs and outputs.** Did the model pass sensible arguments? Did the
-#    tool return something readable?
+# 4. **Tool inputs and outputs.** Sensible arguments? Readable return value?
 # 5. **Token counts per step.** One step usually dominates cost.
-# 6. **Latency waterfall.** One step usually dominates time, and it is often not
-#    the one you assumed.
+# 6. **Latency waterfall.** One step usually dominates time — often not the one
+#    you assumed.
+#
+# **Practice once with a real key:** deliberately pass a missing template
+# variable, find it in the UI, then fix it. That single loop is the skill.
 
 # %% [markdown]
 # ## Try it yourself
@@ -472,6 +554,9 @@ if require("LANGSMITH_API_KEY", feature="attaching user feedback to a run"):
 # | `evaluate(...)` | Score a change before shipping it |
 # | Local eval | Same discipline without an account - do it from day one |
 # | Feedback | Attach user thumbs to the exact run |
+# | Debugging order | Prompt → finish_reason → retrieval/tools → tokens → latency |
+#
+# Graph-level tracing, Studio, and production sampling land in notebook **45**.
 #
 # ## Next
 #
