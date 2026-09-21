@@ -1,0 +1,26 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.langgraph_api/
+
+# Generated artifacts from the notebooks
+*.db
+*.sqlite
+*.sqlite3
+.cache/
+.chroma/
+chroma_db/
+faiss_index/
+embedding_cache/
+shared/sample_data/generated/
+artifacts/
+.artifacts/
+
+# Cloned reference courses and unpacked LLG archives (see references/course-crosswalk.md)
+.upstream/
+LLG/_extracted/
+LLG/
+*.docx

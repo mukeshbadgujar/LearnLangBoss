@@ -1,0 +1,66 @@
+# GenAI Mastery curriculum - Python 3.10+ required (3.12 recommended)
+# Install with:  python -m pip install -r requirements.txt
+
+# ---------- Core framework (LangChain v1 line) ----------
+langchain>=1.4,<2
+langchain-core>=1.5,<2
+langgraph>=1.2,<2
+langgraph-checkpoint-sqlite>=2.0
+langchain-classic>=1.0          # legacy chains/retrievers/hub kept for comparison lessons
+langchain-community>=0.4        # loaders + tools that have no dedicated package yet
+langchain-text-splitters>=1.0
+
+# ---------- Model providers (Groq first, OpenRouter + OpenAI as fallbacks) ----------
+langchain-groq>=1.1,<2
+langchain-openai>=1.4,<2        # also powers OpenRouter via its OpenAI-compatible endpoint
+
+# ---------- Embeddings + vector stores (all local, no paid key needed) ----------
+langchain-huggingface[full]>=1.2
+langchain-chroma>=1.0
+faiss-cpu>=1.8
+rank-bm25>=0.2.2                # keyword search half of hybrid/ensemble retrieval
+
+# ---------- Document loading ----------
+pypdf>=5.0
+beautifulsoup4>=4.12
+lxml>=5.0
+unstructured>=0.16              # DirectoryLoader fallback parser
+
+# ---------- Tooling used by agent lessons ----------
+wikipedia>=1.4
+duckduckgo-search>=7.0
+numexpr>=2.10                   # safe calculator tool
+pandas>=2.2
+SQLAlchemy>=2.0
+
+# ---------- Observability, serving, notebooks ----------
+langsmith>=0.3
+fastapi>=0.115
+uvicorn[standard]>=0.32
+httpx>=0.27
+python-dotenv>=1.0
+pydantic>=2.9
+tiktoken>=0.8
+jupyterlab>=4.2
+ipykernel>=6.29
+ipywidgets>=8.1
+grandalf>=0.8                   # ASCII graph drawing when mermaid rendering is unavailable
+matplotlib>=3.9
+pydantic-settings>=2.6          # typed settings for the FastAPI capstone
+pytest>=8.3                     # capstone 53 ships a real test suite
+pytest-asyncio>=0.24
+
+# ---------- Optional / paid (uncomment when you have the key) ----------
+# langchain-tavily>=0.2          # TAVILY_API_KEY - web search for research agents
+# langchain-cohere>=0.4          # COHERE_API_KEY - reranking lesson
+# langchain-pinecone>=0.2        # PINECONE_API_KEY - managed vector store lesson
+# langchain-anthropic>=1.0       # ANTHROPIC_API_KEY - extra provider
+# langgraph-checkpoint-postgres>=2.0
+# psycopg[binary]>=3.2
+# deepagents>=0.2                # notebooks 50, 50a - the packaged deep-agent harness
+# redis>=5.0                     # semantic caching lesson
+# langchain-experimental>=0.3    # notebook 16a Python REPL + SemanticChunker, pandas agent
+# mcp>=1.2                       # notebook 16b - write your own FastMCP server
+# langchain-mcp-adapters>=0.1    # notebook 16b - expose MCP servers as LangChain tools
+# litellm>=1.55                  # notebook 27a - the gateway itself (Router, fallbacks, cost)
+# langchain-litellm>=0.2         # notebook 27a - ChatLiteLLM, the LangChain wrapper

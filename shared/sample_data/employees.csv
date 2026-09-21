@@ -1,0 +1,15 @@
+employee_id,name,department,level,location,manager,joined_on,annual_leave_balance,sick_leave_balance
+E-101,Asha Menon,Engineering,L4,Bengaluru,E-110,2022-03-14,18,9
+E-102,Rahul Verma,Engineering,L3,Pune,E-110,2023-07-03,11,12
+E-103,Priya Nair,Data Science,L3,Bengaluru,E-111,2023-01-23,7,4
+E-104,Daniel Fernandes,Engineering,L2,Remote,E-110,2024-09-16,21,12
+E-105,Meera Iyer,Product,L4,Mumbai,E-112,2021-11-08,4,11
+E-106,Karthik Rao,Engineering,L1,Bengaluru,E-102,2025-06-02,13,12
+E-107,Sneha Kulkarni,Data Science,L2,Pune,E-111,2024-02-19,16,8
+E-108,Arjun Malhotra,Support,L2,Gurugram,E-113,2023-10-11,9,6
+E-109,Fatima Sheikh,Support,L3,Remote,E-113,2022-08-29,22,12
+E-110,Vikram Desai,Engineering,L5,Bengaluru,E-114,2019-04-01,6,10
+E-111,Lakshmi Prasad,Data Science,L5,Bengaluru,E-114,2020-02-17,15,12
+E-112,Nikhil Joshi,Product,L5,Mumbai,E-114,2020-06-22,12,7
+E-113,Ritu Agarwal,Support,L4,Gurugram,E-114,2021-09-06,19,12
+E-114,Sanjay Kapoor,Leadership,L6,Bengaluru,,2018-01-15,8,12

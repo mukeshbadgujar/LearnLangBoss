@@ -1,0 +1,16 @@
+ticket_id,customer,plan,category,priority,status,opened_on,summary,resolution_hours
+TCK-1001,Acme Retail,Enterprise,billing,high,resolved,2026-01-08,Invoice shows duplicate charge for January seats,6
+TCK-1002,Bluepeak Health,Growth,integration,critical,resolved,2026-01-09,Webhook deliveries failing with 401 after key rotation,3
+TCK-1003,Cedar Logistics,Starter,how-to,low,resolved,2026-01-11,How do I export a dashboard to PDF,1
+TCK-1004,Acme Retail,Enterprise,performance,high,open,2026-01-14,Dashboard load time exceeds 30 seconds on large datasets,
+TCK-1005,Dunlin Media,Growth,billing,medium,resolved,2026-01-15,Need invoice reissued with updated GST number,12
+TCK-1006,Everline Bank,Enterprise,security,critical,open,2026-01-16,Request SOC2 report and data residency confirmation,
+TCK-1007,Cedar Logistics,Starter,bug,medium,resolved,2026-01-17,CSV export drops the last row when filtered,20
+TCK-1008,Foxglove Labs,Growth,integration,high,resolved,2026-01-18,Salesforce sync stopped after sandbox refresh,8
+TCK-1009,Bluepeak Health,Growth,how-to,low,resolved,2026-01-19,Where can I see per-user API usage,2
+TCK-1010,Granite Foods,Starter,billing,medium,open,2026-01-20,Downgrade from Growth to Starter mid-cycle,
+TCK-1011,Everline Bank,Enterprise,performance,high,resolved,2026-01-21,API p99 latency spiked to 4 seconds during EU business hours,30
+TCK-1012,Harlow Energy,Enterprise,bug,critical,resolved,2026-01-22,Scheduled reports sent twice to all recipients,5
+TCK-1013,Foxglove Labs,Growth,how-to,low,resolved,2026-01-23,Best practice for naming data sources,1
+TCK-1014,Dunlin Media,Growth,bug,high,open,2026-01-24,Timezone offset wrong on weekly summary emails,
+TCK-1015,Granite Foods,Starter,integration,medium,resolved,2026-01-25,Google Sheets connector asks to reauthorize daily,16
