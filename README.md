@@ -1,9 +1,11 @@
 # GenAI Mastery: LangChain + LangGraph
 
 A complete, runnable curriculum that takes you from "what is a chat model" to
-shipping a multi-agent LangGraph service behind FastAPI. **54 Jupyter
+shipping a multi-agent LangGraph service behind FastAPI. **63 Jupyter
 notebooks**, every one executable on Windows, macOS or Linux, using free model
 providers.
+
+Theory (mechanism, not a second copy of the labs) lives in [docs/README.md](docs/README.md): a quick path, a deep chapter per notebook, and an interview bank.
 
 Built against **LangChain 1.x** and **LangGraph 1.x** - not the 0.x tutorials
 you will find everywhere else. Where your search results show a deprecated API,

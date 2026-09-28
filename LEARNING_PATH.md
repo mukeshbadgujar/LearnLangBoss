@@ -13,6 +13,10 @@ Letter-suffixed notebooks (`16a`, `20a`, …) sit next to the lesson they
 extend. They come from the [course crosswalk](references/course-crosswalk.md)
 against Eden Marco, Kris Naik, and the `LLG/` archive.
 
+The same topics as low-level theory (objects, runtime, failure anatomy) are in
+[docs/README.md](docs/README.md). Use the quick guides before a notebook, the
+deep chapter while you study it, and the interview bank before a client call.
+
 ---
 
 ## Route A — full mastery
